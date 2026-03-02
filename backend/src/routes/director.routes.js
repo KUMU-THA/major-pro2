@@ -7,7 +7,33 @@ const logAudit = require("../utils/auditLogger");
 const { Parser } = require("json2csv");
 const router = express.Router();
 
+//switch role
+const jwt = require("jsonwebtoken");
 
+router.post(
+  "/switch-role",
+  authMiddleware,
+  roleMiddleware(["director"]),
+  async (req, res) => {
+    const { newRole } = req.body;
+
+    if (!["director", "staff", "student"].includes(newRole)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: req.user.id,
+        role: "director",      // stays director forever
+        activeRole: newRole
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.json({ message: `Switched to ${newRole}`, token });
+  }
+);
 
 router.post(
   "/create-staff",
@@ -81,11 +107,13 @@ router.get(
       const result = await pool.query(
         `SELECT id, username, department
          FROM users
-         WHERE role = 'staff' AND created_by = $1`,
-        [req.user.id]
+         WHERE role = 'staff'
+         ORDER BY username ASC`
       );
+
       res.json(result.rows);
     } catch (err) {
+      console.error(err);
       res.status(500).json({ message: "Error fetching staff" });
     }
   }
@@ -95,24 +123,31 @@ router.delete(
   authMiddleware,
   roleMiddleware(["director"]),
   async (req, res) => {
-    const result = await pool.query(
-      `DELETE FROM users
-       WHERE id = $1 AND role = 'staff' AND created_by = $2`,
-      [req.params.id, req.user.id]
-    );
+    try {
+      const result = await pool.query(
+        `DELETE FROM users
+         WHERE id = $1 AND role = 'staff'`,
+        [req.params.id]
+      );
 
-    if (result.rowCount === 0) {
-      return res.status(403).json({ message: "Not allowed" });
-    }
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
 
-    res.json({ message: "Staff deleted" });
-    await logAudit({
+      await logAudit({
         actorId: req.user.id,
         actorRole: req.user.role,
         action: "DELETE",
         targetRole: "staff",
-        description: `Director deleted staff ${req.params.id}`,
+        description: `Director deleted staff ID ${req.params.id}`,
       });
+
+      res.json({ message: "Staff deleted successfully" });
+
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Error deleting staff" });
+    }
   }
 );
 router.post(

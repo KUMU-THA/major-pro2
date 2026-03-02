@@ -17,7 +17,7 @@ router.post(
 
     const { newRole } = req.body;
 
-    if (!["admin", "director", "staff"].includes(newRole)) {
+    if (!["admin", "director", "staff", "st"].includes(newRole)) {
       return res.status(400).json({ message: "Invalid role" });
     }
 
